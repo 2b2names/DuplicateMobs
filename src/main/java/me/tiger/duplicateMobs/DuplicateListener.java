@@ -17,6 +17,10 @@ import java.util.concurrent.ThreadLocalRandom;
 public class DuplicateListener implements Listener {
 
     private static final String META_DUPLICATE = "duplicatemobs_duplicate";
+
+    // 1 second per-mob cooldown
+    private final Cooldown cooldown = new Cooldown(1000);
+
     private final DuplicateManager manager;
 
     public DuplicateListener(DuplicateManager manager) {
@@ -34,8 +38,11 @@ public class DuplicateListener implements Listener {
 
         // Exclusions
         if (source instanceof EnderDragon) return; // your rule
-        if (source instanceof Wither) return;      // also excluded
+        if (source instanceof Wither) return;      // keep sane
         if (!(source instanceof Monster)) return;  // only hostile mobs
+
+        // Per-mob cooldown
+        if (!cooldown.ready(source.getUniqueId())) return;
 
         // Cap: max 50 duplicates alive (spawned by plugin)
         if (!manager.canSpawnMore()) return;
@@ -48,7 +55,6 @@ public class DuplicateListener implements Listener {
                 : 1.2 + ThreadLocalRandom.current().nextDouble(1.2);   // C: around
 
         double angle = ThreadLocalRandom.current().nextDouble(0, Math.PI * 2);
-
         var spawnLoc = source.getLocation().clone().add(Math.cos(angle) * r, 0, Math.sin(angle) * r);
 
         Entity spawned = world.spawnEntity(spawnLoc, source.getType());
@@ -57,6 +63,9 @@ public class DuplicateListener implements Listener {
         // Track duplicate for cap removal
         dup.setMetadata(META_DUPLICATE, new FixedMetadataValue(manager.plugin(), true));
         manager.markDuplicateAlive(dup);
+
+        // Put the new duplicate on cooldown too (prevents instant chain spam)
+        cooldown.ready(dup.getUniqueId());
 
         // Copy ONLY weapon (main hand)
         copyWeaponOnly(source, dup);
@@ -69,8 +78,14 @@ public class DuplicateListener implements Listener {
     @EventHandler
     public void onDuplicateDeath(EntityDeathEvent event) {
         LivingEntity e = event.getEntity();
-        if (!e.hasMetadata(META_DUPLICATE)) return;
-        manager.markDuplicateDead(e.getUniqueId());
+
+        // Remove from cap tracking if it was a plugin duplicate
+        if (e.hasMetadata(META_DUPLICATE)) {
+            manager.markDuplicateDead(e.getUniqueId());
+        }
+
+        // Cleanup cooldown entry (prevents memory growth)
+        cooldown.remove(e.getUniqueId());
     }
 
     private LivingEntity resolveMobSource(Entity damager) {
