@@ -1,0 +1,14 @@
+name: DuplicateMobs
+version: 1.0
+main: me.tiger.duplicateMobs.DuplicateMobs
+api-version: "1.20"
+
+commands:
+  duplicatemobs:
+    description: Enable/disable mob duplication on hit
+    usage: /duplicatemobs <enable|disable>
+    permission: duplicatemobs.use
+
+permissions:
+  duplicatemobs.use:
+    default: op
